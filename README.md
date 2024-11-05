@@ -1,5 +1,8 @@
 # RankingQuizReadMe
 
+아래의 링크로 서비스에 접속하실 수 있습니다. 
+
+https://rankingquiz.rivercastleworks.site
 
 # Trouble Shooting
 
@@ -22,6 +25,15 @@
        objectMapper.registerModule(new JavaTimeModule());
    
    
+---
+
+# ERD
+<div align="center">
+  
+![image](https://github.com/user-attachments/assets/30573d18-2dbd-42c9-ae04-e547ad1f2458)
+
+</div>
+
 ---
 
 # 서비스 이용 
