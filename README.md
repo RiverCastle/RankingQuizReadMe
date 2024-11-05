@@ -23,3 +23,26 @@
    
    
 ---
+
+# 서비스 이용 
+<div align="center">
+
+서비스 화면 및 카카오 로그인, 이름 바꾸기
+
+![1-0 Trim](https://github.com/user-attachments/assets/09632357-905e-42e3-b679-ad4f5a8abb01)
+
+<br>
+
+실시간 퀴즈 진행
+
+![1-2 - Trim](https://github.com/user-attachments/assets/52a07e11-26b5-4ec3-9e73-afaf962a38e9)
+
+<br>
+
+틀린 퀴즈 문제 조회
+
+![2](https://github.com/user-attachments/assets/dc8f26e4-3a91-4b0e-8895-0ef0fbc209a2)
+
+<br>
+
+</div>
