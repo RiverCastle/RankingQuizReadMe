@@ -57,4 +57,14 @@ https://rankingquiz.rivercastleworks.site
 
 <br>
 
+사용자 피드백 입력 및 Issue 등록 자동화
+
+![3](https://github.com/user-attachments/assets/59f905d5-0ec7-4657-9732-bed8f39d5e36)
+
+
+![image](https://github.com/user-attachments/assets/e797c78f-9fcf-413a-8635-1f9ccbd30216)
+
+
+<br>
+
 </div>
