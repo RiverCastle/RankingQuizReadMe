@@ -189,6 +189,79 @@ public void updateDataCenterStateAndAction(DataCenterState dataCenterState) {
        ObjectMapper objectMapper = new ObjectMapper();
        objectMapper.registerModule(new JavaTimeModule());
    
+
+2. 임의로 객체를 조회하는 코드 성능개선
+
+   2-1. 개선 이전 코드
+   ```java
+   @Override
+    public QuizContent getQuizContentExcept(Long presentQuizContentId, QuizCategory category) {
+        long max = quizContentRepository.findMaxId();
+        long min = quizContentRepository.findMinId();
+        boolean found = false;
+
+        while (!found) {
+            Long randomId = new Random().nextLong(min, max);
+            if (randomId.equals(presentQuizContentId)) continue;
+            Optional<QuizContent> optional = quizContentRepository.findByIdAndCategory(randomId, category);
+            if (optional.isPresent()) return optional.get();
+        }
+        return null;
+    }
+
+    @Override
+    public QuizContent getRandomQuizContent(QuizCategory category) {
+        long max = quizContentRepository.findMaxId();
+        long min = quizContentRepository.findMinId();
+
+        boolean found = false;
+        int count = 0;
+        while (!found) {
+            Long randomId = new Random().nextLong(min, max + 1);
+            Optional<QuizContent> optional = quizContentRepository.findByIdAndCategory(randomId, category);
+            if (!optional.isEmpty()) return optional.get();
+            count++;
+            if (count > 10) found = true;
+        }
+        return null;
+    }
+    ```
+   
+   정말 부끄러운 코드라고 생각한다. 임의로 조회하기 위해서 최대 Id, 최소 Id를 조회한 후, JPQL로 그 범위 내의 임의의 값을 찾고 해당 id의 값을 가진 객체의 카테고리가 일치할 때까지 반복하는 과정을 거친다. 심지어 아래의 코드는 10번 이내에 발견하지 못하면 null을 반환한다. 핑계를 대자면, JPQL을 적극적으로 활용하려는 생각이 커서 JPQL로 랜덤 객체 1개를 조회하려고 했으나, 어떻게 JPQL을 작성해야할 지 몰라서 답답한 상황에 일단 마무리하려고 위와 같은 부끄러운 코드가 작성되었다.
+
+   2-2. 개선 이후 코드
+
+   ```java
+   @Override
+    public QuizContent getQuizContentExcept(Long presentQuizContentId, QuizCategory category) {
+        return quizContentRepository.findRandomByIdNotAndCategory(presentQuizContentId, category.name()).orElseThrow(() -> new RuntimeException("NOT FOUND"));
+    }
+
+    @Override
+    public QuizContent getRandomQuizContent(QuizCategory category) {
+        return quizContentRepository.findRandomByCategory(category.name()).orElseThrow(() -> new RuntimeException("NOT FOUND"));
+    }
+   ```
+   
+
+   ```java
+   @Repository
+   public interface QuizContentRepository extends JpaRepository<QuizContent, Long> {
+       @Query(value = "SELECT * FROM quiz_content qc WHERE qc.category = :category AND qc.id != :id ORDER BY RAND() LIMIT 1", nativeQuery = true)
+       Optional<QuizContent> findRandomByIdNotAndCategory(@Param("id") Long id, @Param("category") String category);
+       @Query(value = "SELECT * FROM quiz_content qc WHERE qc.category = :category ORDER BY RAND() LIMIT 1", nativeQuery = true)
+       Optional<QuizContent> findRandomByCategory(@Param("category") String category);
+   }
+   ```
+   
+   이전과 다르게 JPQL을 사용하지 않고, Native Query를 사용했다. where문으로 id의 비교가 필요한 경우 실시하고, 랜덤으로 정렬한 후, Limit 1로 객체 1개만 조회하도록 하였다.
+   
+   이 코드를 작성하면서 특별히 어려움을 겪었던 부분이 하나가 있다. **바로, Category enum class 객체를 String으로 바꿔서 조회**를 해야한다는 것이다. 초기에 는 각 메서드의 매개변수에 String category가 아닌 QuizCategory category가 있었다.
+
+   Entity를 정의할 때, category 컬럼에 enum 클래스 객체가 String 타입으로 저장되도록 설정하였으나, 처음에 QuizCategory category를 매개변수로 두고 테스트를 실행했을 때, 특정 category에 대해서는 작동이 되었다. 다른 category에 대해서는 아예 조회하지 못하는 결과로 이어졌다. 처음에 특정 cateogory에 대해서 작동이 되었기때문에 매개변수 타입을 String으로 바꿀 생각을 하는데까지 너무 늦게 걸렸다.
+
+   추가로 왜 특정 category에 대해서는 작동이 되었는지 공부를 해볼 필요가 있다. 
+
    
 ---
 
