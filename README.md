@@ -4,6 +4,118 @@
 
 https://rankingquiz.rivercastleworks.site
 
+# Enhancement
+
+1. 퀴즈 메시지 전송 기능 비동기 처리
+
+   1-1. 고민
+   
+   경쟁에 있어서 가장 중요한 요소 중 하나는 공정성이라고 생각한다. 현재 서비스 이용자들에게 좀 더 **공정한 경쟁환경을 구현**해야겠다고 생각했다. 특히, **퀴즈 데이터를 발송하는 속도에 있어서 완벽을 추구하고 싶었다.**
+
+   1-2. 현재 코드와 공정성에 대한 생각
+   
+   서버에서 클라이언트 세션에 퀴즈 데이터 메시지를 전송하는 코드는 다음과 같다.
+   
+   ```java
+      private void sendMessageToAllSessions(TextMessage message) throws IOException {
+        for (WebSocketSession session : sessions.values()) session.sendMessage(message);
+    }
+   ```
+
+   위와 같이 for문을 사용해 순차적으로 세션에 퀴즈 데이터 메시지를 전송한다. **사용자가 늘어나면 늘어날 수록 가장 먼저 퀴즈를 받는 사용자와 가장 늦게 퀴즈를 받는 사용자 간의 차이는 커지게 된다.** 아래와 같이 동시 접속 사용자 수에 따라 테스트 코드와 그 결과를 작성해보았다. 현재 배포를 위해 사용하고 있는 AWS EC2 t2.micro 환경이라면 미리 대비할 필요가 있다고 생각했다.
+
+   ```java
+   @Test
+    void testMessageSendTime() throws IOException, InterruptedException {
+        sendMessages(sessions_200);
+        sendMessages(sessions_1000);
+        sendMessages(sessions_10000);
+        sendMessages(sessions_30000);
+        sendMessages(sessions_50000);
+    }
+    /*
+    테스트 목적: 동일한 퀴즈 데이터 메시지를 세션에 전송할 때, 현재 순차적으로 전송하는데, 소요되는 시간을 측정
+    테스트 결과:
+        접속자 수 = 200:   0.0078525 seconds
+        접속자 수 = 1000:  0.022955  seconds
+        접속자 수 = 10000: 0.2079455 seconds
+        접속자 수 = 30000: 0.624372  seconds
+        접속자 수 = 50000: 1.0402312 seconds
+     */
+   ```
+
+   1-2. 비동기 처리를 통한 개선
+   
+   아래의 코드와 같이 세션에 메시지를 전송하는 작업을 Runnable 인터페이스의 구현체로 정의했다. 그리고 스레드 풀을 생성하여 작업이 실행되도록 테스트 코드를 작성하였다.
+
+```java
+public class MessageSendingTask implements Runnable {
+    private WebSocketSession session;
+    private TextMessage textMessage;
+
+    public MessageSendingTask(WebSocketSession session, TextMessage textMessage) {
+        this.session = session;
+        this.textMessage = textMessage;
+    }
+
+    @Override
+    public void run() {
+        try {
+            session.sendMessage(textMessage);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+```
+
+```java
+private void sendMessagesAsync(Map<String, WebSocketSession> sessions) throws IOException, InterruptedException {
+        Set<String> sessionIds = sessions.keySet();
+        TextMessage textMessage = new TextMessage("테스트 메시지");
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        for (String sessionId : sessionIds) {
+            executor.submit(new MessageSendingTask(sessions.get(sessionId), textMessage));
+        }
+        executor.shutdown();
+        executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+   /*
+    테스트 목적: 순차적으로 전송하지 않고, 스레드풀을 사용해 비동기적으로 전송했을 때 시간 측정
+    테스트 결과:
+        접속자 수 = 200:   0.0078525 -> 0.0076665 seconds
+        접속자 수 = 1000:  0.022955  -> 0.0120313 seconds
+        접속자 수 = 10000: 0.2079455 -> 0.0828796 seconds
+        접속자 수 = 30000: 0.624372  -> 0.2757126 seconds
+        접속자 수 = 50000: 1.0402312 -> 0.4613047 seconds
+     */
+```
+
+실제로 배포된 서버 환경에서의 테스트 결과는 아니지만, 위와 같이 최소 40%에서 최대 60%까지 시간차이가 단축되었다. 실제로 사용될 저용량의 서버 환경에서는 좀 더 유의미한 결과가 될 것이라고 생각한다. 아직 이 개선사항을 로직에 반영하지 않았으니, 아마 반영한다면 아래와 같이 반영할 것 같다. 
+
+```java
+@Component
+@RequiredArgsConstructor
+public class 동시접속자가 많은 퀴즈 핸들러 implements WebSocketHandler {
+   private final ExecutorService executor = Executors.newFixedThreadPool(2); // 생성 반복을 문제마다 하지 않도록 final 선언 
+   
+   private void 퀴즈메시지 전송 메서드() {
+      // 퀴즈 메시지 전송
+      QuizDto quizDto = quizDataCenterMediator.getPresentQuizDto(category);
+      TextMessage quizMessage = textMessageFactory.produceTextMessage(quizDto);
+      for (String sessionId : sessionIds) {
+         executor.submit(new MessageSendingTask(sessions.get(sessionId), textMessage));
+      }
+   }
+}
+```
+
+   1-3. 추가로 공부해볼 내용
+   
+   스레드 풀의 크기를 늘릴 수록 좋은 것은 아니었다. 2로 했을 때 가장 효과가 좋았다. 왜 그럴까?
+
 # Refactoring Logs
 
 1. State Pattern을 적용한 리펙토링
