@@ -4,6 +4,8 @@
 
 https://rankingquiz.rivercastleworks.site
 
+---
+
 # Enhancement
 
 2024.11.18 퀴즈 메시지 전송 기능 비동기 처리
@@ -115,6 +117,8 @@ public class 동시접속자가 많은 퀴즈 핸들러 implements WebSocketHand
    1-3. 추가로 공부해볼 내용
    
    스레드 풀의 크기를 늘릴 수록 좋은 것은 아니었다. 2로 했을 때 가장 효과가 좋았다. 왜 그럴까?
+
+---
 
 # Refactoring Logs
 
@@ -278,10 +282,119 @@ public void updateDataCenterStateAndAction(DataCenterState dataCenterState) {
     }
 ```
 
-  
+---
 
 
 # Trouble Shooting
+
+2024.12.19 점수 적립 기능 동시성 문제 해결
+
+  1-1. 테스트 코드를 통한 동시성 문제 인식
+  
+  아래와 같이 테스트 코드를 작성하였다.
+  
+```java
+    @Test
+    @DisplayName("Member Point 적립 동시성 테스트")
+    void testUpdatePoint() throws InterruptedException {
+        // 테스트용 멤버 관련 코드 생략
+
+        ExecutorService executorService = Executors.newFixedThreadPool(4);
+        CountDownLatch latch = new CountDownLatch(threadNumber);
+
+        for (int i = 0 ; i < threadNumber; i++) {
+            executorService.submit(() -> {
+               try {
+                   memberService.updatePoint(memberId, pointToAdd);
+               } catch (Exception e) {
+                   System.out.println("e = " + e);
+               } finally {
+                   latch.countDown();
+               }
+            });
+        }
+
+      // 검증 코드 생략 (아래에 결과와 함께 간단하게 서술하였습니다)
+    }
+```
+
+현재 product code로는 위의 테스트 코드를 통과하지 못했다. 
+
+현재 점수  = 37
+적립될 점수 = 2
+    x    
+적립 횟수   = 32
+-----결과-----
+expected = 101
+actual   = 59
+
+기대되는 점수는 기존 점수 37점 + (2점씩 32회) 64점 = 101점이지만,
+실제로 결과로 나타난 점수는 59점이다. 
+
+   1-2. 원인 분석
+   
+      먼저 시작된 트랜잭션이 종료된 후 다음 트랜잭션이 시작되어야 하는데, 그렇지 못해서 발생한 결과이다. 
+
+   1-3. 해결
+   
+   그래서 아래와 같이 비관적 락을 적용한 코드를 추가하였다. 
+   
+```java
+@Lock(LockModeType.PESSIMISTIC_WRITE)
+@Query("SELECT m FROM Member m WHERE m.id = :id")
+Optional<Member> findByIdForUpdate(Long id);
+```
+
+1-4. 테스트 코드를 위한 노력
+
+동시성 문제를 테스트하는 테스트 코드를 많이 참고하였고, 아래의 예외를 참 많이 만났다. 
+
+org.springframework.dao.InvalidDataAccessApiUsageException: Query requires transaction be in progress, but no transaction is known to be in progress
+
+해석해보면 쿼리가 진행중인 트랜잭션을 필요로 하나 진행중인 트랜잭션이 없다는 의미이다. 
+
+많은 블로그에서 @Transactional만 붙이면 해결된다고 해서 따라했으나 여전히 똑같았다. 원인을 파악하지는 못했다. @Transactional이 붙었다면 트랜잭션이 활성화(시작)되어야 하는데, 내부에 TransactionSynchronizationManager.isActualTransactionActive()를 통해 확인을 해도 마찬가지였다...
+
+문제로 돌아가서, 결국 테스트 코드가 정상적으로 작동이 먼저 되려면 멀티스레드에서 트랜잭션이 활성화되어야한다. 그래서 아래와 같이 TransactionTemplate을 사용해서 테스트 코드를 수정하였다. 
+
+```java
+for (int t = 0; t < threadNumber; t++) {
+            executorService.submit(() -> {
+                try {
+                    transactionTemplate.execute(status -> {
+                        memberService.updatePoint(memberId, pointToAdd);
+                        return null;
+                    });
+                } catch (Exception e) {
+                    System.out.println("e = " + e);
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        latch.await();
+```
+
+현재 점수  = 69
+
+적립될 점수 = 6
+    
+적립 횟수   = 32
+
+69 + 6 * 32 = 261
+
+-----결과-----
+
+expected = 261  
+
+actual   = 261
+
+결과는 위와 같이 성공이었다. 예외도 발생하지 않았고, 점수 업데이트 메서드 호출도 의도대로 정상적으로 반영이 되었다. 트랜잭션을 명시적으로 시작시킬 수 있는 방법을 찾은 것 같다고 느꼈다.
+
+
+---
+
 
 2024.11.04 ObjectMapper의 역직렬화 실패
 
@@ -302,7 +415,7 @@ public void updateDataCenterStateAndAction(DataCenterState dataCenterState) {
        objectMapper.registerModule(new JavaTimeModule());
    
 
-2. 임의로 객체를 조회하는 코드 성능개선
+2024.11.16 임의로 객체를 조회하는 코드 성능개선
 
    2-1. 개선 이전 코드
    ```java
