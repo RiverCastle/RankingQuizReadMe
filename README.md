@@ -6,7 +6,7 @@ https://rankingquiz.rivercastleworks.site
 
 # Enhancement
 
-1. 퀴즈 메시지 전송 기능 비동기 처리
+2024.11.18 퀴즈 메시지 전송 기능 비동기 처리
 
    1-1. 고민
    
@@ -118,7 +118,7 @@ public class 동시접속자가 많은 퀴즈 핸들러 implements WebSocketHand
 
 # Refactoring Logs
 
-1. State Pattern을 적용한 리펙토링
+2024.11.06 State Pattern을 적용한 리펙토링
 
    
    리펙토링 이전 코드는 아래와 같다. QuizDataCenter의 상태에 따라 수행해야할 동작이 다름을 인식하고 if 조건문을 사용하여 상태별로 수행할 로직을 다르게 구현하였다.
@@ -283,7 +283,7 @@ public void updateDataCenterStateAndAction(DataCenterState dataCenterState) {
 
 # Trouble Shooting
 
-1. ObjectMapper의 역직렬화 실패
+2024.11.04 ObjectMapper의 역직렬화 실패
 
   1-1. 에러 로그
        java.lang.IllegalArgumentException: Java 8 date/time type `java.time.LocalDateTime` not supported by default: add Module "com.fasterxml.jackson.datatype:jackson-datatype-jsr310" to enable handling at [Source: UNKNOWN; byte offset: #UNKNOWN]
