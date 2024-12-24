@@ -8,6 +8,80 @@ https://rankingquiz.rivercastleworks.site
 
 # Enhancement
 
+2024.12.24 퀴즈 컨텐츠(문제) 생성 기능 성능 개선
+
+   1-1. 고민
+
+   현재 퀴즈 콘텐츠(문제) 등록은 개발자인 내가 Postman을 사용하여 아래와 같이 N개의 데이터를 하나의 요청으로 처리하고 있습니다.
+   
+   ```json
+   [
+    {
+        "statement": "happy",
+        "multipleOptions": [
+            "행복한",
+            "슬픈",
+            "기쁜",
+            "우울한"
+        ],
+        "answer": "행복한",
+        "timeLimit": 5,
+        "quizType": "MULTIPLE_CHOICE",
+        "category": "ENG_VOCA",
+        "tags": [
+            "happy"
+        ]
+    },
+
+(중략)
+
+    {
+        "statement": "grade",
+        "multipleOptions": [
+            "학점",
+            "숙제",
+            "시험",
+            "학생",
+            "선생님",
+            "교실",
+            "도서관",
+            "과목"
+        ],
+        "answer": "학점",
+        "timeLimit": 6,
+        "quizType": "MULTIPLE_CHOICE",
+        "category": "ENG_VOCA",
+        "tags": [
+            "grade"
+        ]
+    }
+]
+
+```
+
+아래의 코드를 통해 퀴즈 콘텐츠 등록이 진행됩니다. N개의 데이터가 담긴 배열을 받아 for문으로 등록 작업을 처리하고 있었습니다.
+
+```java
+    @PostMapping
+    public void addQuizContent(@RequestBody QuizContentCreateDto[] quizContentCreateDtos) {
+        for (QuizContentCreateDto quizContentCreateDto : quizContentCreateDtos)
+            quizContentCreateFacade.createQuizContent(quizContentCreateDto);
+    }
+```
+
+여기서 느낀 문제점은 데이터의 개수가 약 150개 정도인데, **요청을 처리하는 시간이 체감될 정도로 길었다는 점**입니다. (테스트 환경에서는 약 3초가 소요되었습니다. 실제 서비스 환경에서는 더 걸릴 것으로 예상되며, 데이터의 개수가 계속해서 추가됨에 따라 더 큰 시간이 소요될 것으로 우려됩니다.)
+
+또 하나의 문제점은 **중간에 예외가 발생했을 때, 그 이후의 퀴즈 콘텐츠 데이터들이 처리되지 않는다는 점**입니다. 그래서 중간의 데이터를 수정/삭제하고 데이터베이스를 truncate한 후 다시 요청을 보내야 하는 번거로움이 있었습니다.
+
+
+1-2. @Async를 통한 개선(비동기, 스레드 풀)
+
+해결 방법은 @Async 어노테이션을 추가하는 것으로 쉽게 해결되었습니다. 현재 위의 코드로는 메인 스레드 1개에서 요청이 처리되기 때문에, 1개의 데이터를 처리하는 데 시간이 N이라고 할 때, 150개의 데이터를 처리하기 위해서는 150 * N의 시간이 요구됩니다. 또한, 중간에 예외가 발생할 경우 이후의 처리는 모두 사라집니다. (150개의 데이터에 대해 테스트 환경에서 약 3200ms가 소요되었으나, 200ms로 줄어들었습니다.)
+
+@Async 어노테이션을 추가함으로써, 스레드 풀을 사용하여 등록 작업을 처리하게 됩니다. 멀티스레드 환경에서 작업이 진행되기 때문에 더 빠르게 동작할 수 있게 되었습니다. 또한, 스레드에서 예외가 발생한 경우, 다른 스레드에 영향을 주지 않기 때문에, 예외가 발생하더라도 문제가 없는 데이터들은 정상적으로 순서에 관계없이 등록될 수 있습니다.
+
+---
+
 2024.11.18 퀴즈 메시지 전송 기능 비동기 처리
 
    1-1. 고민
