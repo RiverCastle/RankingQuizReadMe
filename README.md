@@ -80,6 +80,36 @@ https://rankingquiz.rivercastleworks.site
 
 @Async 어노테이션을 추가함으로써, 스레드 풀을 사용하여 등록 작업을 처리하게 됩니다. 멀티스레드 환경에서 작업이 진행되기 때문에 더 빠르게 동작할 수 있게 되었습니다. 또한, 스레드에서 예외가 발생한 경우, 다른 스레드에 영향을 주지 않기 때문에, 예외가 발생하더라도 문제가 없는 데이터들은 정상적으로 순서에 관계없이 등록될 수 있습니다.
 
+1-3. 테스트 코드 작성 후기
+
+퀴즈 등록 메서드를 비동기로 처리하면서 테스트 코드를 작성하는 데에 어려움이 있었다. **문제는 등록을 마친 후 조회를 시도해야하는데, 등록 메서드가 완료되지 않은 상태로 조회 메서드가 호출되어서 테스트가 의도대로 이뤄지지 않았다.** 등록도 되지 않은 객체를 조회하고 있었던 것이다.
+
+```java
+    @Test
+    @DisplayName("퀴즈 생성 테스트")
+    void testCreate() {
+        // Dto 생성 로직 생략
+
+        facade.createQuizContent(dto); // 퀴즈 등록 (비동기) 메서드
+        
+        List<QuizContent> entities = qRepository.findAll(); // 생성된 퀴즈 조회
+
+        // 검증 코드 생략
+    }
+
+```
+
+로그를 보면서 위의 원인을 파악할 수 있었다. 
+
+Hibernate: **select** qc1_0.id,qc1_0.dtype,qc1_0.answer,qc1_0.category,qc1_0.statement,qc1_0.time_limit **from quiz_content** qc1_0
+
+Hibernate: **insert into quiz_content** (answer,category,statement,time_limit,dtype,id) values (?,?,?,?,'ShortAnswerQuizContent',default)
+
+
+따라서 테스트 코드의 수정방안은 다음과 같았다. **등록 메서드가 모두 마친 후, 조회를 한다.**
+
+
+
 ---
 
 2024.11.18 퀴즈 메시지 전송 기능 비동기 처리
